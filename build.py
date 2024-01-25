@@ -12,7 +12,8 @@ import platform
 import urllib.request
 import os.path as op
 import stat
-from distutils.dir_util import copy_tree
+from hashlib import sha1
+from shutil import copytree as copy_tree
 
 
 def error(str):
@@ -398,17 +399,21 @@ def cleanup(args):
         header('* Cleaning java')
         execv([gradlew, 'clean'])
 
+def file_hash(path:str)->str:
+    with open(path,"rb") as file:
+        return sha1(file.read()).hexdigest()
+
+
 
 def setup_ndk(args):
     os_name = platform.system().lower()
     ndk_ver = config['ndkVersion']
     url = f'https://dl.google.com/android/repository/android-ndk-r{ndk_ver}-{os_name}-x86_64.zip'
     ndk_zip = url.split('/')[-1]
-
-    header(f'* Downloading {ndk_zip}')
-    with urllib.request.urlopen(url) as response, open(ndk_zip, 'wb') as out_file:
-        shutil.copyfileobj(response, out_file)
-
+    if (not os.path.exists(ndk_zip)) or (not file_hash(ndk_zip)=="c3ebc83c96a4d7f539bd72c241b2be9dcd29bda9"):
+        header(f'* Downloading {ndk_zip}')
+        with urllib.request.urlopen(url) as response, open(ndk_zip, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
     header('* Extracting NDK zip')
     rm_rf(ndk_path)
     with zipfile.ZipFile(ndk_zip, 'r') as zf:
@@ -424,8 +429,8 @@ def setup_ndk(args):
                 unix_attributes = info.external_attr >> 16
             if unix_attributes:
                 os.chmod(extracted_path, unix_attributes)
-    mv(op.join(ndk_root, f'android-ndk-r{ndk_ver}'), ndk_path)
 
+    mv(op.join(ndk_root, f'android-ndk-r{ndk_ver}'), ndk_path)
     header('* Patching static libs')
     for api in ['16', '21']:
         for target in ['aarch64-linux-android', 'arm-linux-androideabi',
@@ -438,7 +443,7 @@ def setup_ndk(args):
                 continue
             src_dir = op.join('tools', 'ndk-bins', api, arch)
             rm(op.join(src_dir, '.DS_Store'))
-            for path in copy_tree(src_dir, lib_dir):
+            for path in copy_tree(src_dir, lib_dir,dirs_exist_ok=True):
                 vprint(f'Replaced {path}')
 
 
